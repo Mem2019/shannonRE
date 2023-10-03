@@ -11,6 +11,7 @@ This supports ARM R7 and ARM11 so far.
 import idaapi
 import idc
 import idautils
+import ida_bytes
 
 ######## Configuration Options ########
 
@@ -251,20 +252,20 @@ def parse_r7_system_control_op(mcr):
 	# http://infocenter.arm.com/help/index.jsp?topic=/com.arm.doc.ddi0458c/BGBICDGG.html
 	ops = {
 		(0, 0)  : "Write System Control Register",				#Bit12: I Cache enable; Bit0: MPU enable
-		(0, 1)  : "Write Auxiliary Control Register",		
+		(0, 1)  : "Write Auxiliary Control Register",
 		(0, 2)  : "Write Coprocessor Access Control Register"
 	}
 
 	crm = mcr['crm']
 	op  = mcr['opcode2']
 
-	return ops[(crm, op)]	
+	return ops[(crm, op)]
 
 def parse_r7_mpu_op(mcr):
 	# http://infocenter.arm.com/help/index.jsp?topic=/com.arm.doc.ddi0458c/BGBFBCFF.html
 	ops = {
 		(0, 0)  : "Write Data Fault Address Register",
-		(0, 2)  : "Write Instruction Fault Address Register",		
+		(0, 2)  : "Write Instruction Fault Address Register",
 		(1, 0)  : "Write MPU Region Base Address Register",			#set base address of region selected by RGNR
 		(1, 2)  : "Write MPU Region Size and Enable Register",		#set size and enable the region selected by RGNR
 		(1, 4)  : "Write MPU Region Access Control Register",		#set access control for the region selected by RGNR
@@ -335,7 +336,7 @@ reg_class_dict = {
 													DATA_LD_OP : parse_data_ld_op,
 													MEM_OP : parse_mem_op,
 													ID_OP : parse_id_op,
-													C15_OP : parse_c15_op 
+													C15_OP : parse_c15_op
 								}
 					},
 					"ARM_R7" : {
@@ -350,13 +351,13 @@ reg_class_dict = {
 													R7_DBG_INT_OP
 								},
 								"parsers" 	  : {	R7_SYSTEM_FEATURE_OP : None,
-													R7_SYSTEM_CONTROL_OP : parse_r7_system_control_op,	
+													R7_SYSTEM_CONTROL_OP : parse_r7_system_control_op,
 													R7_FAULT_STATUS_OP : None,
 													R7_MPU_OP : parse_r7_mpu_op,
 													R7_CACHE_OP : parse_r7_cache_op,
 													R7_PERF_OP : None,
 													R7_ID_OP : None,
-													R7_DBG_INT_OP : None			
+													R7_DBG_INT_OP : None
 								}
 					}
 }
@@ -367,9 +368,11 @@ reg_class_dict = {
 def find_mcr():
 	ins = []
 	for seg_ea in Segments():
-		for head in Heads(seg_ea, SegEnd(seg_ea)):
-			if isCode(GetFlags(head)):
-				i = DecodeInstruction(head)
+		for head in Heads(seg_ea, idc.get_segm_attr(seg_ea, SEGATTR_END)):
+			if ida_bytes.is_code(ida_bytes.get_full_flags(head)):
+				# Iterate over all instructions disassembled in the binary
+				i = ida_ua.insn_t()
+				ida_ua.decode_insn(i, head)
 				if i.itype in [idaapi.ARM_mcr, idaapi.ARM_mcr2]:
 					ins.append(i)
 
@@ -413,8 +416,8 @@ def parse_mcr(i, reg_classes):
 	parsed_ea['opcode2'] = op2.value
 
 	if DEBUG == True:
-		print "%x (%x): op0: %x(%d), op1: %x(%d), op2: %x(%d), op3: %x(%d)" %(i.ea, i.auxpref, op0.value, op0.type, op1.value, op1.type, op2.value, op2.type, op3.value, op3.type)
-		print "%x %x %x %x %x %x %x" %(op1.specflag1, op1.specflag2, op1.specflag3, op1.specflag4, op1.specval, op1.reg, op1.flags)
+		print("%x (%x): op0: %x(%d), op1: %x(%d), op2: %x(%d), op3: %x(%d)" %(i.ea, i.auxpref, op0.value, op0.type, op1.value, op1.type, op2.value, op2.type, op3.value, op3.type))
+		print("%x %x %x %x %x %x %x" %(op1.specflag1, op1.specflag2, op1.specflag3, op1.specflag4, op1.specval, op1.reg, op1.flags))
 
 	CRn = parsed_ea['crn']
 
@@ -423,7 +426,7 @@ def parse_mcr(i, reg_classes):
 
 	#this is not supposed to happen, we did something wrong
 	if CRn not in reg_class_dict[CPU]["reg_classes"]:
-		print "CPU: %s Cn: %d" % (CPU, CRn)
+		print("CPU: %s Cn: %d" % (CPU, CRn))
 		raise("Invalid Cn for CPU!")
 
 	func = reg_class_dict[CPU]["parsers"][CRn]
@@ -434,27 +437,27 @@ def parse_mcr(i, reg_classes):
 
 	else:
 		#this mcr is unimplemented currently
-		print "Unimplemented mcr!"
+		print("Unimplemented mcr!")
 
 	return False
 
 
 def print_func_props(i):
-	f_sea = GetFunctionAttr(i.ea, FUNCATTR_START)
-	f_eea = GetFunctionAttr(i.ea, FUNCATTR_END)
-	f_nam = GetFunctionName(i.ea)
+	f_sea = idc.get_func_attr(i.ea, FUNCATTR_START)
+	f_eea = idc.get_func_attr(i.ea, FUNCATTR_END)
+	f_nam = idc.get_func_name(i.ea)
 
-	print "\t%s() %x-%x (%d bytes)" %(f_nam, f_sea, f_eea, f_eea-f_sea)
+	print("\t%s() %x-%x (%d bytes)" % (f_nam, f_sea, f_eea, f_eea-f_sea))
 
 def print_mcr_op(i, mcr, s):
-	print "%x: %s (using r%d)" %(i.ea, s, mcr['opcode1'])
+	print("%x: %s (using r%d)" %(i.ea, s, mcr['opcode1']))
 	if ADD_COMMENT:
-		idc.MakeComm(i.ea, s)
+		idc.set_cmt(i.ea, s, 0)
 
 def find_ops(instructions, reg_classes = reg_class_dict[CPU]["reg_classes"]):
 	done_funcs = []
 	for i in instructions:
-		f_sea = GetFunctionAttr(i.ea, FUNCATTR_START)
+		f_sea = idc.get_func_attr(i.ea, FUNCATTR_START)
 		matched = parse_mcr(i, reg_classes)
 
 		if not matched:
@@ -463,7 +466,6 @@ def find_ops(instructions, reg_classes = reg_class_dict[CPU]["reg_classes"]):
 		if f_sea not in done_funcs:
 			print_func_props(i)
 			done_funcs.append(f_sea)
-
 
 
 ######## ARM Revision Specific Functions ########
@@ -487,9 +489,9 @@ def find_arm_R7_all_ops(instructions):
 
 def main():
 	instructions = find_mcr()
-	cache_ops = find_arm_R7_all_ops(instructions)
+	find_arm_R7_all_ops(instructions)
 
-	print "Finished!"
+	print("Finished!")
 
 if __name__ == "__main__":
 	main()
