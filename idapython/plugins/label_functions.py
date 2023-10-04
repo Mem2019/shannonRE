@@ -15,42 +15,44 @@ misc_name = 0
 fuzzy_path_name = 0
 fuzzy_long_path_name = 0
 
+# Given a function call instruction at `ea`, find the argument at index `arg_num`.
 def trace_arg_bwd(ea, arg_num):
 
 	ARCH = "ARM32"
 	CALL_ARGS = {"ARM32" : ["R0", "R1", "R2", "R3"]}
 
 	args = CALL_ARGS[ARCH]
-	
+
 	if (len(args) <= arg_num):
 		arg_into = "SP"
 		arg_offs = ((arg_num - len(args))) * 4
-	else: 
+	else:
 		arg_into = CALL_ARGS[ARCH][arg_num]
 		arg_offs = 0
 
 	func = idaapi.get_func(ea)
 	fc = idaapi.FlowChart(func)
 
+	# Find the block containing `ea`
 	for block in fc:
-		if block.startEA <= ea and block.endEA > ea:
+		if block.start_ea <= ea and ea < block.end_ea:
 			break
 
 
 	#original sink
 	arg_in = set([arg_into])
 
-	while (ea >= block.startEA):
+	while (ea >= block.start_ea):
 
-		#print "0x%08x %s" % (ea, idc.GetDisasm(ea))
+		# "0x%08x %s" % (ea, idc.GetDisasm(ea))
 
 		############ BEGINNING OF TRACING ############
 
-		mnem = idc.GetMnem(ea)
+		mnem = idc.print_insn_mnem(ea)
 
 		if mnem == "MOV":
-			arg_to = idc.GetOpnd(ea, 0)
-			arg_from = idc.GetOpnd(ea, 1)
+			arg_to = idc.print_operand(ea, 0)
+			arg_from = idc.print_operand(ea, 1)
 
 
 			#propagate to new register
@@ -61,8 +63,8 @@ def trace_arg_bwd(ea, arg_num):
 
 		elif mnem == "LDR":
 
-			arg_to = idc.GetOpnd(ea, 0)
-			arg_from = idc.GetOpnd(ea, 1)
+			arg_to = idc.print_operand(ea, 0)
+			arg_from = idc.print_operand(ea, 1)
 
 			if ARCH == "ARM32":
 
@@ -71,16 +73,16 @@ def trace_arg_bwd(ea, arg_num):
 					#we want the data reference that is of type 1 (Data_Offset), as oppossed to 1 (Data_Read)
 					refs = [r for r in idautils.XrefsFrom(ea) if r.type == 1]
 					if len(refs) == 1:
-						#print "There is only one data offset reference from here, if it is a string we are done."
+						# "There is only one data offset reference from here, if it is a string we are done."
 						for s in IDAStrings:
 							if s.ea == refs[0].to:
 								return str(s)
 
 		elif mnem == "ADR" or mnem == "ADR.W":
-			#print "ADR instruction!"
+			# "ADR instruction!"
 
-			arg_to = idc.GetOpnd(ea, 0)
-			arg_from = idc.GetOpnd(ea, 1)
+			arg_to = idc.print_operand(ea, 0)
+			arg_from = idc.print_operand(ea, 1)
 
 			if ARCH == "ARM32":
 
@@ -89,15 +91,15 @@ def trace_arg_bwd(ea, arg_num):
 					#we want the data reference that is of type 1 (Data_Offset), as oppossed to 1 (Data_Read)
 					refs = [r for r in idautils.XrefsFrom(ea) if r.type == 1]
 					if len(refs) == 1:
-						#print "There is only one data offset reference from here, if it is a string we are done."
+						# "There is only one data offset reference from here, if it is a string we are done."
 						for s in IDAStrings:
 							if s.ea == refs[0].to:
 								return str(s)
 
 		elif mnem == "ADD":
 
-			arg_to = idc.GetOpnd(ea, 0)
-			arg_from = idc.GetOpnd(ea, 1)
+			arg_to = idc.print_operand(ea, 0)
+			arg_from = idc.print_operand(ea, 1)
 
 			if ARCH == "ARM32":
 
@@ -113,7 +115,7 @@ def trace_arg_bwd(ea, arg_num):
 
 		############ END OF TRACING ############
 
-		if ea == block.startEA:
+		if ea == block.start_ea:
 
 			#For some reason, block.preds() seems to be broken. I get 0 predecessors to every block. So for now, we limit to same block.
 			#Also idaapi.decode_preceding_instruction is annoying, because if there are more than 1 preceding, it just shows the first one only.
@@ -122,48 +124,48 @@ def trace_arg_bwd(ea, arg_num):
 			preds = []
 			for b in fc:
 				for s in b.succs():
-					if s.startEA == block.startEA:
+					if s.start_ea == block.start_ea:
 						#this is a predecessor block to us
 						preds.append(b)
 
 			if len(preds) == 1:
-				#print "1 predecessor, continuing there"
+				# "1 predecessor, continuing there"
 				block = preds[0]
-				i = idautils.DecodePreviousInstruction(block.endEA)
-				ea = block.endEA - i.size
+				i = idautils.DecodePreviousInstruction(block.end_ea)
+				ea = block.end_ea - i.size
 
 			else:
-				#print "0 or multiple predecessor blocks, givin up."
+				# "0 or multiple predecessor blocks, givin up."
 				return ""
 
 		else:
 			i = idautils.DecodePreviousInstruction(ea)
 			ea -= i.size
 
- 	return ""
+	return ""
 
 #######################################################################################################################################
 
 
-#This returns the functions that call f_ea
+# This returns the EAs of functions that call f_ea
 def find_callers(f_ea):
-	callers = set(map(idaapi.get_func, CodeRefsTo(f_ea, 0)))
+	callers = map(idaapi.get_func, CodeRefsTo(f_ea, 0))
 	parents = []
 	for ref in callers:
 		if not ref:
 			continue
-		parents.append(ref.startEA)
+		parents.append(ref.start_ea)
 
 	return parents
 
-#This returns the call site within function f_ea that calls the function target_f_ea
+# This returns the call site within function f_ea that calls the function target_f_ea
 def find_caller(f_ea, target_f_ea):
 	f = idaapi.get_func(f_ea)
 	if not f:
 		return None
 
 	for caller in set(CodeRefsTo(target_f_ea, 0)):
-		if f.startEA <= caller and f.endEA > caller:
+		if f.start_ea <= caller and caller < f.end_ea:
 			return caller
 
 	return None
@@ -230,52 +232,54 @@ def overwrite_name_by_arg(f_ea):
 	#     - next branch will go to dbg_trace_args_something_wrapper_0 (the aforementioned string is the first argument)
 
 	arg_funcs = {
-		
-		idc.LocByName('dbg_trace_args_something_wrapper') : 1,
-		idc.LocByName('dbg_trace_args_something_wrapper_0') : 1,
-		idc.LocByName('dbg_trace_args_something_wrapper_1') : 0,
-		idc.LocByName('dbg_trace_args_something_wrapper_2') : 0,
-		idc.LocByName('dbg_trace_args_something_wrapper_4') : 1,
-		idc.LocByName('dbg_trace_args_something_wrapper_5') : 0,
-		idc.LocByName('dbg_trace_args_something_wrapper_6') : 0,
-		idc.LocByName('dbg_trace_args_something_wrapper_7') : 0,
 
-		#idc.LocByName('dbg_trace_args_something_wrapper') : 1,
-		#idc.LocByName('sub_40676D04') : 1,
-		#idc.LocByName('sub_40D20ECA') : 0,
-		#idc.LocByName('sub_40D20EAC') : 0
+		idc.get_name_ea_simple('dbg_trace_args_something_wrapper') : 1,
+		idc.get_name_ea_simple('dbg_trace_args_something_wrapper_0') : 1,
+		idc.get_name_ea_simple('dbg_trace_args_something_wrapper_1') : 0,
+		idc.get_name_ea_simple('dbg_trace_args_something_wrapper_2') : 0,
+		idc.get_name_ea_simple('dbg_trace_args_something_wrapper_4') : 1,
+		idc.get_name_ea_simple('dbg_trace_args_something_wrapper_5') : 0,
+		idc.get_name_ea_simple('dbg_trace_args_something_wrapper_6') : 0,
+		idc.get_name_ea_simple('dbg_trace_args_something_wrapper_7') : 0,
 
-		#idc.LocByName('print_0') : 0,
+		#idc.get_name_ea_simple('dbg_trace_args_something_wrapper') : 1,
+		#idc.get_name_ea_simple('sub_40676D04') : 1,
+		#idc.get_name_ea_simple('sub_40D20ECA') : 0,
+		#idc.get_name_ea_simple('sub_40D20EAC') : 0
 
-		#idc.LocByName('fatal_error') : 1,
-		#idc.LocByName('assert_failed') : 1,
-		#idc.LocByName('sub_408AB208') : 1,
-		#idc.LocByName('sub_400B0C24') : 1,
+		#idc.get_name_ea_simple('print_0') : 0,
 
-		#idc.LocByName('sub_4084D288') : 1,
-		#idc.LocByName('j_free') : 1,
-		#idc.LocByName('rrc_system_services_something__3') : 1,
+		#idc.get_name_ea_simple('fatal_error') : 1,
+		#idc.get_name_ea_simple('assert_failed') : 1,
+		#idc.get_name_ea_simple('sub_408AB208') : 1,
+		#idc.get_name_ea_simple('sub_400B0C24') : 1,
+
+		#idc.get_name_ea_simple('sub_4084D288') : 1,
+		#idc.get_name_ea_simple('j_free') : 1,
+		#idc.get_name_ea_simple('rrc_system_services_something__3') : 1,
 	}
 
-	for target_f_ea, arg_n in arg_funcs.iteritems():
+	for target_f_ea, arg_n in arg_funcs.items():
+		if target_f_ea == 0xffffffff:
+			continue
 		if f_ea in find_callers(target_f_ea):
 			caller_ea = find_caller(f_ea, target_f_ea)
-			#print "Should replace name of 0x%08x with arg #%d in call of 0x%08x" %(f_ea, arg_n, target_f_ea)
 			new_name = trace_arg_bwd(caller_ea, arg_n)
 
 			if new_name == "":
 				return None
 			elif " " in new_name: #sanity check that name works as a function name
 				return None
-			elif ("sub_" in idc.GetFunctionName(f_ea)) or ("_something" in idc.GetFunctionName(f_ea)):
-				print "Found new name: %s" % new_name
+			elif ("sub_" in idc.get_func_name(f_ea)) or ("_something" in idc.get_func_name(f_ea)):
+				print("Found new name: %s" % new_name)
 				return new_name
 			else:
-				print "Found same name %s as %s" % (new_name, idc.GetFunctionName(f_ea))
+				print("Found same name %s as %s" % (new_name, idc.get_func_name(f_ea)))
 				return new_name
 
 	return None
 
+# Returns a dictionary that maps the function EA to all strings that it references.
 def str_fun_xrefs():
 	str_fun_xref = {}
 	for s in IDAStrings:
@@ -284,10 +288,10 @@ def str_fun_xrefs():
 			if not f:
 				continue
 
-			if idc.GetMnem(ref) == "":
+			if idc.print_insn_mnem(ref) == "":
 				continue
 
-			f_ea = f.startEA
+			f_ea = f.start_ea
 			try:
 				#because we are only carrying the string value itself, duplications should be removed.
 				#This is important because of OFFS/ADR instruction double references being very typical,
@@ -298,6 +302,9 @@ def str_fun_xrefs():
 
 	return str_fun_xref
 
+# Separate the set of strings to two sets:
+# 1. path strings: file paths that point to a c source file (also must contain "../")
+# 2. misc strings: other strings
 def path_misc_strings(str_l):
 	path_strings = []
 	misc_strings = []
@@ -309,6 +316,7 @@ def path_misc_strings(str_l):
 
 	return (path_strings, misc_strings)
 
+# Given a path to source file, returns a module name extracted from the path.
 def module_path(p):
 
 	p_path = os.path.dirname(p)
@@ -410,7 +418,7 @@ def function_label(p_strings, m_strings, f_ea):
 		# use these!
 		elif m_str_len > 1 and m_str_len <= 3:
 
-			m_strings = filter(accept_string, set(m_strings))
+			m_strings = set(filter(accept_string, set(m_strings)))
 			if len(m_strings) > 0:
 				f_name = "_".join(set(m_strings))
 				f_name = "misc_%s_something" % f_name
@@ -439,13 +447,12 @@ def function_label(p_strings, m_strings, f_ea):
 		f_name = "%s_%s" % (module_path(str(p_strings[0])), f_name)
 		p_name = "calls_%s" % f_name
 
-		print "Hey look, a function with two paths names at 0x%08x, would become %s" % (f_ea, f_name)
-		print p_str_len, p_strings
+		print("Hey look, a function with two paths names at 0x%08x, would become %s" % (f_ea, f_name))
+		print(p_str_len, p_strings)
 
 		f_name = None
 		p_name = None
 		m_name = None
-		
 
 	# as a last resort we just take the first of these and name them
 	# so this is visible
@@ -457,8 +464,8 @@ def function_label(p_strings, m_strings, f_ea):
 		f_name = "calls_%s_something" % os.path.splitext(f_name)[0]
 		p_name = "calls_%s_c_%s" % (module_path(str(p_strings[0])), f_name)
 
-		#print "Hey look, a fuzzy long path name: %s at 0x%08x, would become %s" % (f_name, f_ea, f_name)
-		#print len(p_strings), p_strings
+		# "Hey look, a fuzzy long path name: %s at 0x%08x, would become %s" % (f_name, f_ea, f_name)
+		# len(p_strings), p_strings
 
 		f_name = None
 		p_name = None
@@ -473,7 +480,7 @@ def apply_labels(fun_names):
 
 	named_overwrittens = []
 
-	for f_ea, name in fun_names.iteritems():
+	for f_ea, name in fun_names.items():
 		name = re.sub('[^a-zA-Z0-9_]+', '', name)
 		curr_name = idaapi.get_func_name(f_ea)
 		if curr_name.startswith("sub_"):
@@ -486,37 +493,32 @@ def apply_labels(fun_names):
 			#so we don't overwrite these
 			continue
 
-		# stats counting aside, make sure we don't overwrite non-sub
-		# functions from e.g. our IDC assignments
-		if not curr_name.startswith("sub_") and not "_something" in curr_name:
-			continue
-
-		ret = idc.LocByName(name)
+		ret = idc.get_name_ea_simple(name)
 		count = 1
 		while (ret != 0xffffffff):
 			count += 1
-			ret = idc.LocByName(name + "__" + "%d" % count)
-		idc.MakeName(f_ea, name + ("__%d" % count)*(count > 1))
-
+			ret = idc.get_name_ea_simple(name + "__" + "%d" % count)
+		idc.set_name(f_ea, name + ("__%d" % count)*(count > 1), SN_CHECK)
 
 def log_statistics(fun_name, parent_labels):
 
 	global exact_name, misc_name, fuzzy_path_name, fuzzy_long_path_name
 
-	print len(fun_name)
-	print "%d exact names" % exact_name
-	print "%d misc names" % misc_name
-	print "%d fuzzy path names" % fuzzy_path_name
-	print "%d fuzzy long path names" % fuzzy_long_path_name
-	print "total labeled functions: %d" %(exact_name + fuzzy_path_name + fuzzy_long_path_name + misc_name)
-	print "total labeled parents: %d" % parent_labels
+	print(len(fun_name))
+	print("%d exact names" % exact_name)
+	print("%d misc names" % misc_name)
+	print("%d fuzzy path names" % fuzzy_path_name)
+	print("%d fuzzy long path names" % fuzzy_long_path_name)
+	print("total labeled functions: %d" %(exact_name + fuzzy_path_name + fuzzy_long_path_name + misc_name))
+	print("total labeled parents: %d" % parent_labels)
 
 def label_functions():
 
 	global IDAStrings
 
-	print "Collecting string references ..."
+	print("Collecting string references ...")
 
+	# Get all strings that should appear in the string subview
 	for s in idautils.Strings():
 		IDAStrings.append(s)
 
@@ -526,9 +528,9 @@ def label_functions():
 	fun_module_name = {}
 	parent_labels = 0
 
-	print "Creating labels for functions ..."
+	print("Creating labels for functions ...")
 
-	for f_ea, str_l in str_fun_xref.iteritems():
+	for f_ea, str_l in str_fun_xref.items():
 		(path_strings, misc_strings) = path_misc_strings(str_l)
 		(f_name, p_name, m_name) = function_label(path_strings, misc_strings, f_ea)
 		if f_name != None:
@@ -536,12 +538,12 @@ def label_functions():
 			fun_parent_name[f_ea] = p_name
 			fun_module_name[f_ea] = m_name
 
-	print "Assigning labels ..."
+	print("Assigning labels ...")
 
 	# we apply the parents after we labeled the strings
 	# and dont label the callers right away. otherwise
 	# we could overwrite function names that already had an exact name
-	for f_ea, name in fun_parent_name.iteritems():
+	for f_ea, name in fun_parent_name.items():
 		#None for functions labels from misc strings,
 		#i.e. only labeling parents of pathname-labeled functions
 		if name != None:
@@ -556,11 +558,11 @@ def label_functions():
 				if p not in fun_module_name.keys():
 					fun_module_name[p] = fun_module_name[f_ea] #parent goes into same module as called child its labeled after
 
-	print "Applying labels to the idb ..."
+	print("Applying labels to the idb ...")
 
 	apply_labels(fun_name)
 
-	print "Assigning module names to unlabeled functions ..."
+	print("Assigning module names to unlabeled functions ...")
 
 	for f_ea in Functions():
 		if f_ea not in fun_module_name.keys():
@@ -569,14 +571,14 @@ def label_functions():
 		elif type(fun_module_name[f_ea]) == type(None):
 			fun_module_name[f_ea] = "unk"
 
-	print "Logging statistics ..."
+	print("Logging statistics ...")
 
 	log_statistics(fun_name, parent_labels)
 
-	print "... and done!"
-	return
+	print("... and done!")
 
-label_functions()
+if __name__ == '__main__':
+	label_functions()
 
 
 """
