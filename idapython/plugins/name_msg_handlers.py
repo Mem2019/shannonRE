@@ -12,8 +12,8 @@ COUNT = 0
 '''
 <TASK>_Decode_<MsgTypeInHungarianNotation>
 
-- get TASK (cc/mm/gmm) from beginning of GetString
-- remove up to <== 
+- get TASK (cc/mm/gmm) from beginning of get_strlit_contents
+- remove up to <==
 - remove <.*> and remove (,)
 - split into words by _
 
@@ -40,76 +40,73 @@ def create_name(s):
 def name_handlers(ea_from, ea_to):
 
 	global COUNT
+	if ea_from == 0xffffffff or ea_to == 0xffffffff:
+		return
+	print("from: 0x%08x to: 0x%08x" % (ea_from, ea_to))
 
 	addr = ea_from
-	print "from: 0x%08x to: 0x%08x" % (addr, ea_to)
 	while (addr < ea_to):
 
-		func_to_name_ea = idc.Dword(addr) & 0xFFFFFFFE
-		log_msg_ptr = idc.Dword(addr + 12)
-		log_msg = idc.GetString(log_msg_ptr)
+		func_to_name_ea = idc.get_wide_dword(addr) & 0xFFFFFFFE
+		log_msg_ptr = idc.get_wide_dword(addr + 12)
+		log_msg = idc.get_strlit_contents(log_msg_ptr).decode()
 
 		#is that a function already?
 		#There were 0 cases of this for our case
 		if not idaapi.get_func(func_to_name_ea):
-			print "There is no function at 0x%08x!" % func_to_name_ea
-			idc.MakeFunction(func_to_name_ea)
-		
-		if "sms_Decode" in idc.GetFunctionName(func_to_name_ea) or "mm_Decode" in idc.GetFunctionName(func_to_name_ea) or "cc_Decode" in idc.GetFunctionName(func_to_name_ea) or "gmm_Decode" in idc.GetFunctionName(func_to_name_ea):
-			print "Already named appropriately, don't overwrite"
+			print("There is no function at 0x%08x!" % func_to_name_ea)
+			ida_funcs.add_func(func_to_name_ea)
+
+		if "sms_Decode" in idc.get_func_name(func_to_name_ea) or "mm_Decode" in idc.get_func_name(func_to_name_ea) or "cc_Decode" in idc.get_func_name(func_to_name_ea) or "gmm_Decode" in idc.get_func_name(func_to_name_ea):
+			print("Already named appropriately, don't overwrite")
 
 		else:
-			print "Naming %s based on %s as %s" % (idc.GetFunctionName(func_to_name_ea), log_msg, create_name(log_msg))
+			name = create_name(log_msg)
+			print("Naming %s based on %s as %s" % (idc.get_func_name(func_to_name_ea), log_msg, name))
 			COUNT += 1
 
-			name = create_name(log_msg)
-
 			# TODO: enable below naming
-			ret = idc.LocByName(name)
+			ret = idc.get_name_ea_simple(name)
 			count = 1
 			while (ret != 0xffffffff):
 				count += 1
-				ret = idc.LocByName(name + "__" + "%d" % count)
-			idc.MakeName(func_to_name_ea, name + ("__%d" % count)*(count > 1))
+				ret = idc.get_name_ea_simple(name + "__" + "%d" % count)
+			idc.set_name(func_to_name_ea, name + ("__%d" % count)*(count > 1), SN_CHECK)
 
 		addr += 16
 
-from_ea = idc.LocByName("CC_in_msgs")
-to_ea = idc.LocByName("CC_out_msgs")
-name_handlers(from_ea, to_ea)
+if __name__ == '__main__':
+	from_ea = idc.get_name_ea_simple("CC_in_msgs")
+	to_ea = idc.get_name_ea_simple("CC_out_msgs")
+	name_handlers(from_ea, to_ea)
 
-"""
-from_ea = idc.LocByName("GMM_in_msgs_1")
-to_ea = idc.LocByName("GMM_out_msgs_1")
-name_handlers(from_ea, to_ea)
+	from_ea = idc.get_name_ea_simple("GMM_in_msgs_1")
+	to_ea = idc.get_name_ea_simple("GMM_out_msgs_1")
+	name_handlers(from_ea, to_ea)
 
-from_ea = idc.LocByName("GMM_in_msgs_2")
-to_ea = idc.LocByName("GMM_in_msg_handlers_1")
-name_handlers(from_ea, to_ea)
+	from_ea = idc.get_name_ea_simple("GMM_in_msgs_2")
+	to_ea = idc.get_name_ea_simple("GMM_in_msg_handlers_1")
+	name_handlers(from_ea, to_ea)
 
-from_ea = idc.LocByName("MM_in_msgs_1")
-to_ea = idc.LocByName("MM_in_msg_handlers_1")
-name_handlers(from_ea, to_ea)
+	from_ea = idc.get_name_ea_simple("MM_in_msgs_1")
+	to_ea = idc.get_name_ea_simple("MM_in_msg_handlers_1")
+	name_handlers(from_ea, to_ea)
 
-from_ea = idc.LocByName("MM_in_msgs_2")
-to_ea = idc.LocByName("MM_in_msg_handlers_2")
-name_handlers(from_ea, to_ea)
-
-
-from_ea = idc.LocByName("sms_handlers_array_1")
-to_ea = idc.LocByName("sms_handler_ptrs_array_1")
-name_handlers(from_ea, to_ea)
-
-from_ea = idc.LocByName("sms_handlers_array_2")
-to_ea = idc.LocByName("sms_handler_ptrs_array_2")
-name_handlers(from_ea, to_ea)
-
-from_ea = idc.LocByName("sms_handlers_array_3")
-to_ea = idc.LocByName("sms_handler_ptrs_array_3")
-name_handlers(from_ea, to_ea)
-"""
-
-print "%d freshly named" % COUNT
+	from_ea = idc.get_name_ea_simple("MM_in_msgs_2")
+	to_ea = idc.get_name_ea_simple("MM_in_msg_handlers_2")
+	name_handlers(from_ea, to_ea)
 
 
+	from_ea = idc.get_name_ea_simple("sms_handlers_array_1")
+	to_ea = idc.get_name_ea_simple("sms_handler_ptrs_array_1")
+	name_handlers(from_ea, to_ea)
 
+	from_ea = idc.get_name_ea_simple("sms_handlers_array_2")
+	to_ea = idc.get_name_ea_simple("sms_handler_ptrs_array_2")
+	name_handlers(from_ea, to_ea)
+
+	from_ea = idc.get_name_ea_simple("sms_handlers_array_3")
+	to_ea = idc.get_name_ea_simple("sms_handler_ptrs_array_3")
+	name_handlers(from_ea, to_ea)
+
+	print("%d freshly named" % COUNT)
