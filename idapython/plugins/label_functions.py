@@ -7,6 +7,8 @@ import idc
 import idaapi
 import json
 import re
+import ida_hexrays
+import ida_typeinf
 
 IDAStrings = []
 
@@ -15,141 +17,66 @@ misc_name = 0
 fuzzy_path_name = 0
 fuzzy_long_path_name = 0
 
-# Given a function call instruction at `ea`, find the argument at index `arg_num`.
-def trace_arg_bwd(ea, arg_num):
+class arg_finder(ida_hexrays.ctree_visitor_t):
+	def __init__(self, call_ea, arg_idx):
+		super().__init__(ida_hexrays.CV_FAST)
+		self.call_ea = call_ea
+		self.arg_idx = arg_idx
+		self.result = None
 
-	ARCH = "ARM32"
-	CALL_ARGS = {"ARM32" : ["R0", "R1", "R2", "R3"]}
+	def visit_insn(self, i):
+		return 0
 
-	args = CALL_ARGS[ARCH]
+	def visit_expr(self, e):
+		# If the instruction address matches the expression address,
+		# we consider the expression to be the candidate.
+		if e.ea != self.call_ea:
+			return 0
 
-	if (len(args) <= arg_num):
-		arg_into = "SP"
-		arg_offs = ((arg_num - len(args))) * 4
-	else:
-		arg_into = CALL_ARGS[ARCH][arg_num]
-		arg_offs = 0
+		# Check the operand, which must be call expression.
+		if e.op != ida_hexrays.cot_call:
+			return 0
 
-	func = idaapi.get_func(ea)
-	fc = idaapi.FlowChart(func)
+		# The required argument index cannot be out-of-bound.
+		if self.arg_idx >= e.a.size():
+			print("Error: Argument index {} is out-of-bound for size {}" \
+				.format(self.arg_idx, e.a.size()))
+			return 1
 
-	# Find the block containing `ea`
-	for block in fc:
-		if block.start_ea <= ea and ea < block.end_ea:
-			break
+		# Access the argument of the required index
+		arg = e.a.at(self.arg_idx)
 
+		# For cast expression, we extract the expression being casted.
+		if arg.op == ida_hexrays.cot_cast:
+			arg = arg.x
 
-	#original sink
-	arg_in = set([arg_into])
-
-	while (ea >= block.start_ea):
-
-		# "0x%08x %s" % (ea, idc.GetDisasm(ea))
-
-		############ BEGINNING OF TRACING ############
-
-		mnem = idc.print_insn_mnem(ea)
-
-		if mnem == "MOV":
-			arg_to = idc.print_operand(ea, 0)
-			arg_from = idc.print_operand(ea, 1)
-
-
-			#propagate to new register
-			if arg_to in arg_in:
-				arg_in.add(arg_from)
-			#note: if arg_from is in arg_in, but arg_to isn't, we don't add arg_to to the sinks, because we are going backwards,
-			#so we know that's not the one that ended up being used.
-
-		elif mnem == "LDR":
-
-			arg_to = idc.print_operand(ea, 0)
-			arg_from = idc.print_operand(ea, 1)
-
-			if ARCH == "ARM32":
-
-				if arg_to in arg_in:
-					#now there should be a a DataRef here to a string.
-					#we want the data reference that is of type 1 (Data_Offset), as oppossed to 1 (Data_Read)
-					refs = [r for r in idautils.XrefsFrom(ea) if r.type == 1]
-					if len(refs) == 1:
-						# "There is only one data offset reference from here, if it is a string we are done."
-						for s in IDAStrings:
-							if s.ea == refs[0].to:
-								return str(s)
-
-		elif mnem == "ADR" or mnem == "ADR.W":
-			# "ADR instruction!"
-
-			arg_to = idc.print_operand(ea, 0)
-			arg_from = idc.print_operand(ea, 1)
-
-			if ARCH == "ARM32":
-
-				if arg_to in arg_in:
-					#now there should be a a DataRef here to a string.
-					#we want the data reference that is of type 1 (Data_Offset), as oppossed to 1 (Data_Read)
-					refs = [r for r in idautils.XrefsFrom(ea) if r.type == 1]
-					if len(refs) == 1:
-						# "There is only one data offset reference from here, if it is a string we are done."
-						for s in IDAStrings:
-							if s.ea == refs[0].to:
-								return str(s)
-
-		elif mnem == "ADD":
-
-			arg_to = idc.print_operand(ea, 0)
-			arg_from = idc.print_operand(ea, 1)
-
-			if ARCH == "ARM32":
-
-				if arg_from == "PC" and arg_to in arg_in:
-
-					#now there should be a a DataRef here to a string.
-					if sum(1 for _ in idautils.DataRefsFrom(ea)) == 1:
-						for ref in idautils.DataRefsFrom(ea):
-							#get string at ref
-							for s in IDAStrings:
-								if s.ea == ref:
-									return str(s)
-
-		############ END OF TRACING ############
-
-		if ea == block.start_ea:
-
-			#For some reason, block.preds() seems to be broken. I get 0 predecessors to every block. So for now, we limit to same block.
-			#Also idaapi.decode_preceding_instruction is annoying, because if there are more than 1 preceding, it just shows the first one only.
-			#So this is getting around the preds() not working.
-
-			preds = []
-			for b in fc:
-				for s in b.succs():
-					if s.start_ea == block.start_ea:
-						#this is a predecessor block to us
-						preds.append(b)
-
-			if len(preds) == 1:
-				# "1 predecessor, continuing there"
-				block = preds[0]
-				i = idautils.DecodePreviousInstruction(block.end_ea)
-				ea = block.end_ea - i.size
-
-			else:
-				# "0 or multiple predecessor blocks, givin up."
-				return ""
-
+		# The decompiler may recognize the string argument as either
+		# a global variable or a number.
+		if arg.op == ida_hexrays.cot_obj:
+			self.result = arg.obj_ea
+		elif arg.op == ida_hexrays.cot_num:
+			self.result = arg.n.value(idaapi.tinfo_t(ida_typeinf.BT_INT64))
+		elif arg.op == ida_hexrays.cot_ref and arg.x.op == ida_hexrays.cot_obj:
+			self.result = arg.x.obj_ea
 		else:
-			i = idautils.DecodePreviousInstruction(ea)
-			ea -= i.size
+			print("Info: At 0x{:x}, argument with op {} is not a const. ({})" \
+				.format(e.ea, arg.opname, arg.operands))
+		return 0
 
-	return ""
+# Given a function call instruction at `ea`, find the argument at index `arg_num`.
+def trace_arg_bwd(call_ea, arg_idx):
+	visitor = arg_finder(call_ea, arg_idx)
+	visitor.apply_to(idaapi.decompile( \
+		idc.get_func_attr(call_ea, FUNCATTR_START)).body, None)
+	return "" if visitor.result is None else \
+		ida_bytes.get_strlit_contents(visitor.result, -1, idc.STRTYPE_C).decode()
 
 #######################################################################################################################################
 
 
 # This returns the EAs of functions that call f_ea
 def find_callers(f_ea):
-	callers = map(idaapi.get_func, CodeRefsTo(f_ea, 0))
+	callers = map(idaapi.get_func, idautils.CodeRefsTo(f_ea, 0))
 	parents = []
 	for ref in callers:
 		if not ref:
@@ -164,7 +91,7 @@ def find_caller(f_ea, target_f_ea):
 	if not f:
 		return None
 
-	for caller in set(CodeRefsTo(target_f_ea, 0)):
+	for caller in set(idautils.CodeRefsTo(target_f_ea, 0)):
 		if f.start_ea <= caller and caller < f.end_ea:
 			return caller
 
@@ -213,23 +140,25 @@ def overwrite_name_by_arg(f_ea):
 	#     - look for "ds_mm_InitGmmServiceReq" string
 	#     - next branch will go to dbg_trace_args_something_wrapper_0 (the aforementioned string is the second argument)
 	# For dbg_trace_args_something_wrapper_1:
-	#     - look for "mm_CoordinateRatChange" string
+	#     - look for "mm_CoordinateAuthRej" string
 	#     - next branch will go to dbg_trace_args_something_wrapper_1 (the aforementioned string is the first argument)
 	# For dbg_trace_args_something_wrapper_2:
 	#     - look for "mm_DecodeRrReleaseIndMsg" string
-	#     - next branch will go to dbg_trace_args_something_wrapper_0 (the aforementioned string is the first argument)
+	#     - next branch will go to dbg_trace_args_something_wrapper_2 (the aforementioned string is the first argument)
 	# For dbg_trace_args_something_wrapper_4:
-	#     - look for "sm_GetPdpAddressPtr" string
-	#     - next branch will go to dbg_trace_args_something_wrapper_0 (the aforementioned string is the second argument)
+	#     - look for "sm_GetPdpAddressLength" string
+	#     - next branch will go to dbg_trace_args_something_wrapper_4 (the aforementioned string is the second argument)
 	# For dbg_trace_args_something_wrapper_5:
 	#     - look for "sms_DecodeMmRelIndMsg" string
-	#     - next branch will go to dbg_trace_args_something_wrapper_0 (the aforementioned string is the first argument)
+	#     - next branch will go to dbg_trace_args_something_wrapper_5 (the aforementioned string is the first argument)
 	# For dbg_trace_args_something_wrapper_6:
-	#     - look for "sms_DecodeUbmcDataIndMsg" string
-	#     - next branch will go to dbg_trace_args_something_wrapper_0 (the aforementioned string is the first argument)
+	#     - look for "sms_DecodeEmmCmasInfoInd" string
+	#     - next branch will go to dbg_trace_args_something_wrapper_6 (the aforementioned string is the first argument)
 	# For dbg_trace_args_something_wrapper_7:
 	#     - look for "ds_mm_DecodeGmmSnReestReqMsg" string
-	#     - next branch will go to dbg_trace_args_something_wrapper_0 (the aforementioned string is the first argument)
+	#     - next branch will go to dbg_trace_args_something_wrapper_7 (the aforementioned string is the first argument)
+
+	# I cannot find 0 and 7, to be specific, ds_mm_* does not present in the binary.
 
 	arg_funcs = {
 
@@ -241,6 +170,7 @@ def overwrite_name_by_arg(f_ea):
 		idc.get_name_ea_simple('dbg_trace_args_something_wrapper_5') : 0,
 		idc.get_name_ea_simple('dbg_trace_args_something_wrapper_6') : 0,
 		idc.get_name_ea_simple('dbg_trace_args_something_wrapper_7') : 0,
+		idc.get_name_ea_simple('change_Stack_ID') : 1
 
 		#idc.get_name_ea_simple('dbg_trace_args_something_wrapper') : 1,
 		#idc.get_name_ea_simple('sub_40676D04') : 1,
@@ -498,7 +428,7 @@ def apply_labels(fun_names):
 		while (ret != 0xffffffff):
 			count += 1
 			ret = idc.get_name_ea_simple(name + "__" + "%d" % count)
-		idc.set_name(f_ea, name + ("__%d" % count)*(count > 1), SN_CHECK)
+		idc.set_name(f_ea, name + ("__%d" % count)*(count > 1), idc.SN_CHECK)
 
 def log_statistics(fun_name, parent_labels):
 
@@ -577,8 +507,7 @@ def label_functions():
 
 	print("... and done!")
 
-if __name__ == '__main__':
-	label_functions()
+label_functions()
 
 
 """

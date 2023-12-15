@@ -75,38 +75,37 @@ def name_handlers(ea_from, ea_to):
 
 		addr += 16
 
-if __name__ == '__main__':
-	from_ea = idc.get_name_ea_simple("CC_in_msgs")
-	to_ea = idc.get_name_ea_simple("CC_out_msgs")
-	name_handlers(from_ea, to_ea)
+from_ea = idc.get_name_ea_simple("CC_in_msgs")
+to_ea = idc.get_name_ea_simple("CC_out_msgs")
+name_handlers(from_ea, to_ea)
 
-	from_ea = idc.get_name_ea_simple("GMM_in_msgs_1")
-	to_ea = idc.get_name_ea_simple("GMM_out_msgs_1")
-	name_handlers(from_ea, to_ea)
+from_ea = idc.get_name_ea_simple("GMM_in_msgs_1")
+to_ea = idc.get_name_ea_simple("GMM_out_msgs_1")
+name_handlers(from_ea, to_ea)
 
-	from_ea = idc.get_name_ea_simple("GMM_in_msgs_2")
-	to_ea = idc.get_name_ea_simple("GMM_in_msg_handlers_1")
-	name_handlers(from_ea, to_ea)
+from_ea = idc.get_name_ea_simple("GMM_in_msgs_2")
+to_ea = idc.get_name_ea_simple("GMM_in_msg_handlers_1")
+name_handlers(from_ea, to_ea)
 
-	from_ea = idc.get_name_ea_simple("MM_in_msgs_1")
-	to_ea = idc.get_name_ea_simple("MM_in_msg_handlers_1")
-	name_handlers(from_ea, to_ea)
+from_ea = idc.get_name_ea_simple("MM_in_msgs_1")
+to_ea = idc.get_name_ea_simple("MM_in_msg_handlers_1")
+name_handlers(from_ea, to_ea)
 
-	from_ea = idc.get_name_ea_simple("MM_in_msgs_2")
-	to_ea = idc.get_name_ea_simple("MM_in_msg_handlers_2")
-	name_handlers(from_ea, to_ea)
+from_ea = idc.get_name_ea_simple("MM_in_msgs_2")
+to_ea = idc.get_name_ea_simple("MM_in_msg_handlers_2")
+name_handlers(from_ea, to_ea)
 
 
-	from_ea = idc.get_name_ea_simple("sms_handlers_array_1")
-	to_ea = idc.get_name_ea_simple("sms_handler_ptrs_array_1")
-	name_handlers(from_ea, to_ea)
+from_ea = idc.get_name_ea_simple("sms_handlers_array_1")
+to_ea = idc.get_name_ea_simple("sms_handler_ptrs_array_1")
+name_handlers(from_ea, to_ea)
 
-	from_ea = idc.get_name_ea_simple("sms_handlers_array_2")
-	to_ea = idc.get_name_ea_simple("sms_handler_ptrs_array_2")
-	name_handlers(from_ea, to_ea)
+from_ea = idc.get_name_ea_simple("sms_handlers_array_2")
+to_ea = idc.get_name_ea_simple("sms_handler_ptrs_array_2")
+name_handlers(from_ea, to_ea)
 
-	from_ea = idc.get_name_ea_simple("sms_handlers_array_3")
-	to_ea = idc.get_name_ea_simple("sms_handler_ptrs_array_3")
-	name_handlers(from_ea, to_ea)
+from_ea = idc.get_name_ea_simple("sms_handlers_array_3")
+to_ea = idc.get_name_ea_simple("sms_handler_ptrs_array_3")
+name_handlers(from_ea, to_ea)
 
-	print("%d freshly named" % COUNT)
+print("%d freshly named" % COUNT)

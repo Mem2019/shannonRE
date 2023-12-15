@@ -82,13 +82,10 @@ def def_functions(s_start):
 	print ("finished segment with %d functions added and %d failures" \
 		% (num_added_functions, num_failures))
 
-"""
 num_total_added_functions = 0
 for s in idautils.Segments():
-	s_start = s
-	if idaapi.segtype(s_start) == idaapi.SEG_CODE:
-		print ("starting segment at 0x%08x" % s_start)
+	s_name = idc.get_segm_name(s)
+	if s_name in ["TOC_BOOT", "TOC_MAIN"]:
+		print("starting segment %s at 0x%08x" % (s_name, s))
 		num_total_added_functions += def_functions(s)
-print ("Added %d functions in total" % num_total_added_functions)
-"""
-
+print("Added %d functions in total" % num_total_added_functions)
