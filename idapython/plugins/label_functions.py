@@ -190,7 +190,7 @@ def overwrite_name_by_arg(f_ea):
 	}
 
 	for target_f_ea, arg_n in arg_funcs.items():
-		if target_f_ea == 0xffffffff:
+		if target_f_ea == idc.BADADDR:
 			continue
 		if f_ea in find_callers(target_f_ea):
 			caller_ea = find_caller(f_ea, target_f_ea)

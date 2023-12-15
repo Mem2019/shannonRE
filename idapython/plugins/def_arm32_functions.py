@@ -24,7 +24,7 @@ def def_functions(s_start):
 	num_added_functions, num_failures = 0, 0
 
 	s_addr = s_start
-	s_end = idc.get_segm_attr(s_start, SEGATTR_END)
+	s_end = idc.get_segm_attr(s_start, idc.SEGATTR_END)
 	print("Segment: 0x%08x-0x%08x" % (s_start, s_end))
 
 	# 0 for arm; 1 for thumb
@@ -81,6 +81,7 @@ def def_functions(s_start):
 
 	print ("finished segment with %d functions added and %d failures" \
 		% (num_added_functions, num_failures))
+	return num_added_functions
 
 num_total_added_functions = 0
 for s in idautils.Segments():
