@@ -66,6 +66,7 @@ def label_all():
 	# Refer to label_functions.py for more details.
 	arg_funcs = {
 
+		idc.get_name_ea_simple('GMC_Assert_Failed'): 2,
 		idc.get_name_ea_simple('dbg_trace_args_something_wrapper') : 1,
 		idc.get_name_ea_simple('dbg_trace_args_something_wrapper_0') : 1,
 		idc.get_name_ea_simple('dbg_trace_args_something_wrapper_1') : 0,
